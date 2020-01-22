@@ -6,6 +6,53 @@
 Changelog
 =========
 
+.. _v0.10.0:
+
+0.10.0
+======
+
+* Data files used for testing and examples are now found using
+  the environment variable ``SERPENT_TOOLS_DATA`` and are no
+  longer distributed with the package.
+
+.. _v0.9.1:
+
+:release-tag:`0.9.1`
+====================
+
+.. _v0.9.1-bugs:
+
+Bug Fixes
+---------
+
+* Sensitivity arrays generated with ``sens opt history 1`` will no longer
+  overwrite the primary result arrays - :pull:`366`. These arrays are not 
+  currently stored - :issue:`367`
+
+
+.. _v0.9.0:
+
+:release-tag:`0.9.0`
+====================
+
+* Python 2 support has been dropped.
+* Add support for installing and testing against Python 3.7
+
+.. _v0.8.1:
+
+:release-tag:`0.8.1`
+====================
+
+* Use ``six>=1.13.0``
+* Use ``yaml>=5.1.1``
+
+.. _v0.8.1-bug:
+
+Bug Fixes
+---------
+
+* Fix :ref:`detector-names` setting
+
 .. _v0.8.0:
 
 :release-tag:`0.8.0`

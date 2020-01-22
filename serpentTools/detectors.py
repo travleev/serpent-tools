@@ -23,8 +23,8 @@ Detector Types
 from math import sqrt, pi
 from warnings import warn
 from numbers import Real
+from collections.abc import Mapping
 
-from six import iteritems
 from numpy import (
     unique, empty, inf, hstack, arange, log, divide, asfortranarray,
     ndarray, asarray,
@@ -46,8 +46,6 @@ from serpentTools.utils import (
 )
 from serpentTools.utils.compare import getLogOverlaps
 from serpentTools.io.hooks import matlabHook
-# PY2 compatibility
-from serpentTools._compat import Mapping
 
 __all__ = ['Detector', 'CartesianDetector', 'HexagonalDetector',
            'CylindricalDetector', 'SphericalDetector']
@@ -772,7 +770,7 @@ class Detector(NamedObject):
             converter(self.name, 'bins'): self.bins,
         }
 
-        for key, value in iteritems(self.grids):
+        for key, value in self.grids.items():
             data[converter(self.name, key)] = value
 
         return data

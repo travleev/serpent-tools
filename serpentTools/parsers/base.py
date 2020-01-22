@@ -5,21 +5,18 @@ Contains the abstract base class upon which all readers
 are built.
 """
 
-from abc import ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 import re
-
-from six import add_metaclass
+from collections.abc import Callable
 
 from numpy import array
-from serpentTools._compat import Callable
 from serpentTools.messages import info
 from serpentTools.settings import rc
 from serpentTools.objects.base import BaseObject
 from serpentTools.utils import checkScipy
 
 
-@add_metaclass(ABCMeta)
-class BaseReader(BaseObject):
+class BaseReader(ABC, BaseObject):
     """Parent class from which all parsers will inherit.
 
     Parameters

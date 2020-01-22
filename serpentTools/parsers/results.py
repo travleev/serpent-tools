@@ -2,9 +2,8 @@
 from collections import OrderedDict
 from numbers import Real
 import re
-from six import iteritems
 
-from numpy import array, vstack, empty
+from numpy import array, empty, asarray
 from cycler import cycler
 from matplotlib import rcParams
 from matplotlib.pyplot import gca
@@ -141,6 +140,58 @@ def varTypeFactory(key):
 __all__ = ['ResultsReader', ]
 
 
+class ListOfArrays(list):
+    """Helper class for creating arrays by appending rows
+
+    Parameters
+    ----------
+    values : numpy.ndarray, optional
+        Initial row to insert into array
+
+    Attributes
+    ----------
+    A : numpy.ndarray
+        Array where each row ``A[i]`` is the ``i``-th row or
+        sub-array that was appended
+    """
+
+    def __init__(self, values=None):
+        super().__init__()
+        self._shape = None
+        self._dtype = None
+        if values is not None:
+            self.append(values)
+
+    @property
+    def A(self):
+        return array(self)
+
+    def append(self, value):
+        """Append a row into the final array
+
+        Parameters
+        ----------
+        value : numpy.ndarray or array-like
+            Some object that can be coerced to a numpy.ndarray.
+            Must have same shape and data type (e.g. float) as
+            previously appended rows
+
+        """
+        value = asarray(value)
+        if not self:
+            self._shape = value.shape
+            self._dtype = value.dtype
+        elif self._shape != value.shape:
+            raise ValueError(
+                "Shapes do not agree: Current {} vs. incoming {}".format(
+                    self._shape, value.shape))
+        elif self._dtype != value.dtype:
+            raise TypeError(
+                "Types do not agree: Current {} vs. incoming {}".format(
+                    self._dtype, value.dtype))
+        super().append(value)
+
+
 class ResultsReader(XSReader):
     """
     Parser responsible for reading and working with result files.
@@ -215,6 +266,7 @@ class ResultsReader(XSReader):
         self._counter = {'meta': 0, 'rslt': 0}
         self._univlist = []
         self._varTypeLookup = {}
+        self._tempArrays = {}
 
         self.metadata.clear()
         self.resdata.clear()
@@ -223,6 +275,17 @@ class ResultsReader(XSReader):
         with open(self.filePath, 'r') as fObject:
             for tline in fObject:
                 self._processResults(tline)
+
+        while self._tempArrays:
+            # Consume temporary arrays
+            key, temp = self._tempArrays.popitem()
+            value = temp.A
+
+            # Only insert first row if no burnup present
+            if value.shape[0] == 1:
+                self.resdata[key] = value.reshape(value.size)
+            else:
+                self.resdata[key] = value
 
     def _processResults(self, tline):
         """Performs the main processing of the results."""
@@ -281,23 +344,18 @@ class ResultsReader(XSReader):
     def _storeResData(self, varNamePy, varVals):
         """Process time-dependent results data"""
         vals = str2vec(varVals)  # convert the string to float numbers
-        if varNamePy in self.resdata.keys():  # extend existing matrix
-            currVar = self.resdata[varNamePy]
-            if len(currVar.shape) == 2:
-                ndim = currVar.shape[0]
-            else:
-                ndim = 1
-            if ndim < self._counter['rslt']:
-                # append this data only once!
-                try:
-                    stacked = vstack([self.resdata[varNamePy], vals])
-                    self.resdata[varNamePy] = stacked
-                except Exception as ee:
-                    raise SerpentToolsException(
-                        "Error in appending {}  into {} of resdata:\n{}"
-                        .format(varNamePy, vals, str(ee)))
-        else:
-            self.resdata[varNamePy] = array(vals)  # define a new matrix
+
+        stored = self._tempArrays.get(varNamePy)
+        if stored is None:
+            self._tempArrays[varNamePy] = ListOfArrays(vals)
+        elif len(stored) < self._counter['rslt']:
+            # append this data only once!
+            try:
+                stored.append(vals)
+            except Exception as ee:
+                raise SerpentToolsException(
+                    "Error in appending {}  into {} of resdata:\n{}"
+                    .format(varNamePy, vals, str(ee)))
 
     def _storeMetaData(self, varNamePy, varType, varVals):
         """Store general descriptive data"""
@@ -310,23 +368,23 @@ class ResultsReader(XSReader):
     def _getBUstate(self):
         """Define unique branch state"""
         burnIdx = self._counter['rslt'] - 1
-        dayVec = self.resdata.get(self._burnupKeys["days"])
+        dayVec = self._tempArrays.get(self._burnupKeys["days"])
 
         if dayVec is None:
             days = 0
         elif burnIdx:
-            days = dayVec[-1, 0]
+            days = dayVec[-1][0]
         else:
-            days = dayVec[0]
+            days = dayVec[0][0]
 
-        burnupVec = self.resdata.get(self._burnupKeys["burnup"])
+        burnupVec = self._tempArrays.get(self._burnupKeys["burnup"])
 
         if burnupVec is None:
             burnup = 0
         elif burnIdx:
-            burnup = burnupVec[-1, 0]
+            burnup = burnupVec[-1][0]
         else:
-            burnup = burnupVec[-1]
+            burnup = burnupVec[0][0]
 
         return UnivTuple(self._univlist[-1], burnup, burnIdx, days)
 
@@ -393,7 +451,7 @@ class ResultsReader(XSReader):
         if universe is not None:
             return universe
 
-        for key, universe in iteritems(self.universes):
+        for key, universe in self.universes.items():
             for uItem, sItem in zip(key, searchKey):
                 if sItem is None:
                     continue
@@ -456,7 +514,7 @@ class ResultsReader(XSReader):
                 .format(self.filePath, self._numUniv,
                         self._counter['rslt'], self._counter['meta']))
         if not self.resdata and not self.metadata:
-            for keys, dictUniv in iteritems(self.universes):
+            for keys, dictUniv in self.universes.items():
                 if dictUniv.hasData():
                     return
             raise SerpentToolsException(
@@ -468,7 +526,7 @@ class ResultsReader(XSReader):
         self._inspectData()
         self._cleanMetadata()
         del (self._varTypeLookup, self._burnupKeys, self._keysVersion,
-             self._counter, self._univlist)
+             self._counter, self._univlist, self._tempArrays)
 
     def _compare(self, other, lower, upper, sigma):
         similar = self.compareMetadata(other)
@@ -603,7 +661,7 @@ class ResultsReader(XSReader):
         """Replace some items in metadata dictionary with easier data types."""
         mdata = self.metadata
         origKeys = set(mdata.keys())
-        for converter, keys in iteritems(METADATA_CONV):
+        for converter, keys in METADATA_CONV.items():
             for key in keys:
                 if key in origKeys:
                     mdata[key] = converter(mdata[key])
@@ -736,7 +794,7 @@ class ResultsReader(XSReader):
         """Simple, unformatted plot with dictionary of keys"""
         # get plot data
         xvals = self.resdata[x][:, 0]
-        for resKey, label in iteritems(y):
+        for resKey, label in y.items():
             ydata = self.resdata[resKey]
             if ydata.shape[0] != xvals.size and ydata.size != xvals.size:
                 raise ValueError(
@@ -843,10 +901,10 @@ class ResultsReader(XSReader):
         if reconvert:
             varFunc = getSerpentCaseName
             out = {
-                varFunc(key): value for key, value in iteritems(self.metadata)
+                varFunc(key): value for key, value in self.metadata.items()
             }
             out.update({
-                varFunc(key): value for key, value in iteritems(self.resdata)
+                varFunc(key): value for key, value in self.resdata.items()
             })
         else:
             out = {}
@@ -877,7 +935,7 @@ class ResultsReader(XSReader):
 
         univData = {func('universes'): univOrder}
 
-        for univKey, univ in iteritems(self.universes):
+        for univKey, univ in self.universes.items():
 
             # position in matrix
             uIndex = univOrder.index(univKey.universe)
@@ -910,7 +968,7 @@ def getSerpentCaseName(name):
 def gatherPairedUnivData(universe, uIndex, bIndex, shapeStart, convFunc,
                          expD, uncD, univData):
     """Helper function to update universe dictionary for exporting"""
-    for xsKey, xsVal in iteritems(expD):
+    for xsKey, xsVal in expD.items():
         outKey = convFunc(xsKey)
         if outKey not in univData:
             if isinstance(xsVal, Real):

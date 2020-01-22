@@ -1,7 +1,6 @@
 """Parser responsible for reading the ``*det<n>.m`` files"""
 
 from warnings import warn
-from six import iteritems
 from numpy import empty
 
 from serpentTools.utils import str2vec
@@ -50,7 +49,7 @@ class DetectorReader(BaseReader):
 
     def iterDets(self):
         """Yield name, detector pairs by iterating over :attr:`detectors`."""
-        for key, det in iteritems(self.detectors):
+        for key, det in self.detectors.items():
             yield key, det
 
     def _read(self):
@@ -76,7 +75,7 @@ class DetectorReader(BaseReader):
 
     def _processDet(self, name, bins, grids):
         """Add this detector with it's grid data to the reader."""
-        if self.settings['names'] and name in self.settings['names']:
+        if self.settings['names'] and name not in self.settings['names']:
             return
         if name in self.detectors:
             raise KeyError("Detector {} already stored on reader"
